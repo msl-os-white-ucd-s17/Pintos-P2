@@ -56,6 +56,7 @@ syscall_handler (struct intr_frame *f) {
   
   switch(sys_call_num){
     case SYS_HALT :
+    	halt();
       printf("calling SYS_HALT");
       break;                   /* Halt the operating system. */
     case SYS_EXIT :
@@ -120,23 +121,15 @@ syscall_handler (struct intr_frame *f) {
       printf("calling SYS_INUMBER");
       break;
     default:
-      break;
-      
-    
+      break;   
   }
-
-
-
   //TODO process which system call is being referenced in syscall-nr.h then call corresponding function here, passing *f (parse *f here? probly not, coupling n such
-
 
 }
 
 //TODO implement all the things darnit
 //TODO memory cleanups for parent / child / grancchild deaths
 //TODO use semaphors for parent child grandchild synchronization
-
-
 
 void halt (void) {
 	shutdown_power_off();
