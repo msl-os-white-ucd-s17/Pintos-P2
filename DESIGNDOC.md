@@ -38,17 +38,19 @@ A1: Copy here the declaration of each new or changed 'struct' or 'struct' member
 
 A2: Briefly describe how you implemented argument parsing.  How do you arrange for the elements of argv[] to be in the right order? How do you avoid overflowing the stack page?
 
->
+> DESCRIBE ARG PARSING HERE -- COMPLETE WHEN WE FINISH CODE FOR ARG PARSING
+>The elements of argv[] are ensured to be in the correct order by pushing the arguments in to the stack in reverse order. 
  
 #### RATIONALE
 
 A3: Why does Pintos implement strtok_r() but not strtok()?
 
->
+>The implementation of strtok_r() in Pintos is more thread safe. The strtok() function uses a static buffer while parsing so if multiple threads were to access this buffer at the same time, the value is likely to be corrupted. With strtok_r() we use saveptr, so we avoid this problem.
 
 A4: In Pintos, the kernel separates commands into a executable name and arguments.  In Unix-like systems, the shell does this separation.  Identify at least two advantages of the Unix approach.
 
->
+>1.) Using the shell to do this seperation is safer and simpler than using the kernel to seperate commands into executable a executalbe name and arguments. 
+>2.)The shell can also check for unsafe command line input before operations, which can reduce the overall complexity of the kernel operations. 
 
 ### SYSTEM CALLS
 
@@ -63,7 +65,8 @@ B1: Copy here the declaration of each new or changed struct or struct member, gl
 
 B2: Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
 
-> 
+>When a file is opened it gets pushed into the current processes list of open files and is given a unique file descriptor. This means that file descriptors are unique within a single process. When the file is close, the file descriptor is freed and can be reused. If a file is opened and kept open repeatedly, then it will receive a new file descriptor.
+
 
 #### ALGORITHMS
 
@@ -73,7 +76,7 @@ B3: Describe your code for reading and writing user data from the kernel.
 
 B4:  Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about for a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
 
->
+>In this case, both situations would require at least one call and at most two calls to pagedir_getpage(). For both situations the memory could lie entirely within the page or overlap into the next one. In a naive implementation, if could be called for every byte to ensure that it is on an allocated page, but since we know the page is of size 4096, then the data must exist on at most two pages. Therefore, we would only need to make two calls if the data is not page aligned or once if the address is algined to the beginning of a page.
 
 B5: Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
 
