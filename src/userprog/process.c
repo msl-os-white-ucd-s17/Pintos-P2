@@ -21,18 +21,33 @@
 static thread_func start_process NO_RETURN;
 static bool load (user_program *p_user_prog, void (**eip) (void), void **esp);
 
+/* ADDED BY STEFANI MOORE */
+struct list lists;	/* List of all lists */
+
+static struct child_exec {
+	bool succes;			/*  */
+	char* cmd_line; 		/*  */
+	struct child_parent *child_ptr;	/*  */
+	semaphore child_loaded;		/*  */
+};
+
 /***********************************************************************************************************************
-MODIFIED BY SHAWN JOHNSON AND LENA BANKS
-
-
+MODIFIED BY SHAWN JOHNSON AND LENA BANKS AND STEFANI MOORE
 Starts a new thread running a user program loaded from FILENAME.  The new thread may be scheduled (and may even exit)
 before process_execute() returns.  Returns the new process's thread id, or TID_ERROR if the thread cannot be created.
+
+ADDED BY STEFANI : Memory is allocated for parsed file_name, string file_name is copied to fn_name, a thread is created using the parsed fn_name, the memory previously allocated for fn_name is later freed, and the child thread lock is downed. If the thread is not executed successfully the function will return with a value of -1.
+
+Using fn_name to maintain the integrity of the file_name string
 ***********************************************************************************************************************/
 tid_t
-process_execute (const char *file_name)
+process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  char *fn_copy = NULL;
   tid_t tid;
+  char *save_ptr = NULL;
+  char *fn_name = NULL;
+
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -40,28 +55,43 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  fn_name = (char *) malloc(strlen(file_name) + 1);
+  strlcpy(fn_name, file_name, strlen(file_name)+1);
 
+  char *arg = strtok_r(fn_name, " ", &save_ptr);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (arg, PRI_DEFAULT, start_process, fn_copy);
+  free (fn_name);
+
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-  return tid;
+
+	/* ADDED BY STEFANI MOORE */
+	sema_down (&thread_current ()->child_sema);
+	if(!thread_current()->success)
+		return -1;
+
+
+	return tid;
 }
 
 /***********************************************************************************************************************
-MODIFIED BY SHAWN JOHNSON AND LENA BANKS
+MODIFIED BY SHAWN JOHNSON AND LENA BANKS AND STEFANI MOORE
 
 A thread function that loads a user process and starts it running.
+
+If the prcoess does not start successfully must set bool success of thread struct to false, else it did start successfully and must set it to true. In both cases must sema UP the child_sema lock of the parent thread
 ***********************************************************************************************************************/
 static void
 start_process (void *file_name_)
 {
-//**********************************************************************************************************************
+  //**********************************************************************************************************************
 //MODIFIED BY SHAWN JOHNSON AND LENA BANKS
   char *throwaway;
   char *arg;
-  char ** args;
-  char *file_name;
+  char *cpy;
+  char *save_ptr;
+  char *file_name = file_name_;
   int arg_index = 0;
 
   user_program user_prog;
@@ -69,22 +99,23 @@ start_process (void *file_name_)
 
   /* extracts file name and arguments using strtok_r; first get file name, then up to 16 arguments separated by spaces*/
   file_name = strtok_r(file_name_, " ", &throwaway);
-  arg = strtok_r(NULL, " ", &throwaway);
+  cpy = (char *) malloc(strlen(arg)+1);
+  strlcpy(cpy, arg, strlen(arg)+1);
+  user_prog.file_name = cpy;
+  arg = strtok_r(cpy, " ", &save_ptr);
   while(arg != NULL && arg_index < 16){
-    args[arg_index] = arg;
-    arg = strtok_r(NULL, " ", &throwaway);
+    cpy = (char *) malloc(strlen(arg)+1);
+    strlcpy(cpy, arg, strlen(arg)+1);
+    user_prog.args[arg_index] = cpy;
+    arg = strtok_r(NULL, " ", &save_ptr);
     arg_index++;
   }
 
-  user_prog.args = args;
-  user_prog.file_name = file_name;
+
   user_prog.arg_count = arg_index;
 
-  //palloc_get_page:  palloc flag 004 indicates user page
-//**********************************************************************************************************************
-
-  struct intr_frame if_;
   bool success;
+  struct intr_frame if_;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -93,10 +124,24 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (pup, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
+ 	/* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success) { 
+    thread_current ()->parent_thread->success = false;
+		sema_up (&thread_current ()->parent_thread->child_sema);
+		thread_exit ();
+	}
+	else {
+		thread_current ()->parent_thread->success = true;
+		sema_up (&thread_current ()->parent_thread->child_sema);
+	}
+
+
+	// Parsing occures in execution
+  
+  //palloc_get_page:  palloc flag 004 indicates user page
+//**********************************************************************************************************************
+ 
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -105,30 +150,70 @@ start_process (void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
-  NOT_REACHED ();
+NOT_REACHED ();
 }
 
-/* Waits for thread TID to die and returns its exit status.  If
+/***********************************************************************************************************************
+MODIFIED BY STEFANI MOORE
+
+Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
    immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+***********************************************************************************************************************/
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+	/* ADDED BY STEFANI MOORE */
+  struct list_elem *e;
+	struct child_kernel_thread * _c = NULL;
+	struct list_elem *_e = NULL;
+
+	for (e = list_begin (&thread_current ()->child_processes); e != list_end (&thread_current ()->child_processes); e = list_next (e))
+	{
+			struct child_kernel_thread * c = list_entry (e, struct child_kernel_thread, elem);
+			if (c->tid == child_tid)
+			{
+					_c = c;
+					_e = e;
+			}
+	}
+
+	if (!_c || !_e)
+		return -1;
+
+	thread_current ()-> waiting_on_thread = _c->tid;
+
+	if (!_c->was_used)
+		sema_down (&thread_current ()->child_sema);
+
+	int status = _c->exit_status;
+	list_remove(_e);
+
+	return status;
 }
 
-/* Free the current process's resources. */
+/***********************************************************************************************************************
+MODIFIED BY STEFANI MOORE
+
+Free the current process's resources.
+***********************************************************************************************************************/
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+	/* ADDED BY STEFANI MOORE */
+	if(cur->exit_status == -100)
+			proc_exit(-1);
+
+	int exit_status = cur->exit_status;
+
+	
+	//TODO : Implement closing of all files
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -227,18 +312,20 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (user_program user_prog, void **esp);
+static bool setup_stack (user_program *p_user_prog, void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
+/* ADDED BY STEFANI MOORE */
+void proc_exit (int status);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (user_program *p_user_prog, void (**eip) (void), void **esp)
+load (user_program *p_user_prog, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -253,8 +340,9 @@ load (user_program *p_user_prog, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  /* Open executable file. */
   file = filesys_open ((*p_user_prog).file_name);
+
+
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", (*p_user_prog).file_name);
@@ -339,7 +427,6 @@ load (user_program *p_user_prog, void (**eip) (void), void **esp)
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
-
   success = true;
 
  done:
@@ -455,16 +542,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     }
   return true;
 }
-
-/***********************************************************************************************************************
+ /***********************************************************************************************************************
 MODIFIED BY SHAWN JOHNSON AND LENA BANKS
 
 Create a minimal stack by mapping a zeroed page at the top of user virtual memory.
 ***********************************************************************************************************************/
 static bool
-setup_stack (user_program *user_prog, void **esp)
+setup_stack (user_program *user_prog, void **esp) 
 {
-  uint8_t *kpage;
+   uint8_t *kpage;
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
@@ -478,45 +564,34 @@ setup_stack (user_program *user_prog, void **esp)
         return success;
       }
 //**********************************************************************************************************************
-//MODIFIED BY SHAWN JOHNSON AND LENA BANKS
-      unsigned int num_bytes = 0;
+//MODIFIED BY SHAWN JOHNSON AND LENA BANKS AND STEFANI MOORE
+
+      int num_bytes = 0;
       char *throwaway = NULL;
       char *arg = NULL;
-      unsigned int arg_index = 0;
 
 
       // Extracts file name and arguments using strtok_r; first get file name,
       // then up to 16 arguments separated by spaces
-      /*
-      file_name = strtok_r(cmd, " ", &throwaway);
-      arg = strtok_r(NULL, " ", &throwaway);
-      while(arg != NULL && arg_index < 16){
-          user_prog.args[arg_index] = arg;
-          arg = strtok_r(NULL, " ", &throwaway);
-          arg_index++;
-      }
-
-
-      user_prog.file_name = file_name;
-      user_prog.arg_count = arg_index;
-      */
-
+	
       void *save_ptr = *esp;
+
       //printf("Push strings\n");
       for (int i = (*user_prog).arg_count - 1; i >= 0; --i) {
         size_t len = strlen((*user_prog).args[i]) + 1;
         *esp -= len;
         strlcpy(*esp, (*user_prog).args[i], len);
         //printf("Reference to argv[%d] : 0x%llx \n", i + 1, (unsigned long long) *vp);
-        num_bytes += (unsigned int) len;
+        num_bytes += (int) len;
       }
 
-      *esp -= strlen((*user_prog).file_name) + 1;
-      strlcpy(*esp, (*user_prog).file_name, strlen((*user_prog).file_name) + 1);
+     *esp -= strlen((*user_prog).file_name) + 1;
+     strlcpy(*esp, (*user_prog).file_name, strlen((*user_prog).file_name) + 1);
       //printf("Reference to argv[0] : 0x%llx \n", (unsigned long long) *vp);
 
-      num_bytes += strlen((*user_prog).file_name) + 1;
-      unsigned int align = num_bytes % 4;
+
+    num_bytes += strlen((*user_prog).file_name) + 1;
+    int align = num_bytes % 4;
 
       if (align > 0) {
         //printf("Word align\n");
@@ -541,7 +616,7 @@ setup_stack (user_program *user_prog, void **esp)
       *esp -= sizeof(char *);
       save_ptr -= strlen((*user_prog).file_name) + 1;
       memcpy(*esp, &save_ptr, sizeof(char *));
-      //printf("Pointer to argv[0]: 0x%llx : 0x%llx \n", (unsigned long long) *vp, (unsigned long long) save_ptr);
+      //printf("Pointer to argv[0]: 0x%llx : 0x%llx \n", (unsigned int) *vp, (unsigned long long) save_ptr);
 
 
       //printf("Push pointer to argv[0] pointer\n");
@@ -561,7 +636,7 @@ setup_stack (user_program *user_prog, void **esp)
 
 //**********************************************************************************************************************
     }
-  return success;
+return success;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
@@ -582,4 +657,35 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+
+/* ADDED BY STEFANI MOORE */
+void 
+proc_exit (int status)
+{
+	struct list_elem *e;
+
+	for(e = list_begin (&thread_current()->parent_thread->child_processes); e != list_end (&thread_current()->parent_thread->child_processes); e = list_next (e))
+	{
+		struct child_kernel_thread *c = list_entry (e, struct  child_kernel_thread, elem);
+		if (c->tid == thread_current ()->tid)
+		{
+			c->was_used = true;
+			c->exit_status = status;
+		}
+
+		thread_current()->exit_status = status;
+
+		if (thread_current ()->parent_thread->waiting_on_thread == thread_current ()->tid)
+			sema_up (&thread_current ()->parent_thread->child_sema);
+
+		thread_exit ();
+
+	}
+
+
+
+
+
 }
