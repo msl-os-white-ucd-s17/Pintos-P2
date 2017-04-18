@@ -1,9 +1,11 @@
 #include "userprog/syscall.h"
-#include "devices/shutdown.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+
+/* NEW CHANGE */
+#include "devices/shutdown.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "lib/string.h"
@@ -118,6 +120,8 @@ syscall_handler(struct intr_frame *f) {
 
     switch (sys_call_num) {
         case SYS_HALT :
+	/* NEW CHANGE */
+	halt();
             printf("calling SYS_HALT");
             break;                   /* Halt the operating system. */
         case SYS_EXIT :
@@ -194,11 +198,13 @@ syscall_handler(struct intr_frame *f) {
         shutdown_power_off();
     }
 
-    void
-    exit(int status) {
-
-        return;
-    }
+/* NEW CHANGE */
+/* Terminated current user program returning status to kernel */
+void exit (int status) 
+{
+	thread_current()->status = status;
+	printf("%s:exit(%d)\n", thread_current()->name, status);	// Print out exit status of each user program
+}
 
     pid_t
     exec(const char *file) {
@@ -206,10 +212,11 @@ syscall_handler(struct intr_frame *f) {
         return;
     }
 
+/* NEW CHANGE */
     int
     wait(pid_t pid) {
 
-        return;
+        return process_wait(pid);
     }
 
     // MODIFIED BY SHAWN JOHNSON
@@ -257,24 +264,52 @@ syscall_handler(struct intr_frame *f) {
         return f_size;
     }
 
+/* NEW CHANGE */
     int
     read(int fd, void *buffer, unsigned size) {
-        return;
+	struct file *f;
+	f = process_get_file(fd);
+
+	if (f == NULL)	// If file could not be read, return -1
+	{
+
+	}
+	return size;	// return bytes read from file
     }
 
+/* NEW CHANGE */
     int
     write(int fd, const void *buffer, unsigned size) {
-        return;
+	struct file *f;
+	f = process_get_file(fd);
+
+	if (f == NULL)	// if nothing written, return 0
+	{
+		return 0;
+	}
+	return size;	// return bytes written to file
     }
 
+/* NEW CHANGE */
     void
     seek(int fd, unsigned position) {
-        return;
+    	struct file *f = process_get_file(fd);		// process file from start to finish
+	if (f == NULL)
+		{
+			printf("Should exit");
+			return;
+		}
     }
 
+/* NEW CHANGE */
     unsigned
     tell(int fd) {
-        return;
+	struct file *f = process_get_file(fd);
+	if (f == NULL)
+		{
+			printf("should exit");
+			return;
+		}
     }
 
     void
