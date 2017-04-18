@@ -313,7 +313,7 @@ void exit (int status)
     }
 
     void
-    close(int fid) {
+    close(int fd) {
         struct list_elem *e;
         struct process_file *ff;
         file_lock_acquire();
