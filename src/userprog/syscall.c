@@ -286,25 +286,76 @@ syscall_handler(struct intr_frame *f) {
         return f_size;
     }
 
-//    int
-//    read(int fd, void *buffer, unsigned size) {
-//        return;
-//    }
-//
-//    int
-//    write(int fd, const void *buffer, unsigned size) {
-//        return;
-//    }
-//
-//    void
-//    seek(int fd, unsigned position) {
-//        return;
-//    }
-//
-//    unsigned
-//    tell(int fd) {
-//        return;
-//    }
+/* NEW CHANGE */
+    int
+    read(int fd, void *buffer, unsigned size) {
+	struct file *f;
+	file_lock_acquire();
+
+	
+	
+//	if(fd == 0)
+//	{		
+//	}
+
+	f = process_get_file(fd);
+	if (f == NULL) // If file could not be read, return -1
+	{	
+		file_lock_release();
+		return -1;
+	}
+
+	size = file_read(f, buffer, size);
+	file_lock_release();
+        return size;
+    }
+
+/* NEW CHANGE */
+    int
+    write(int fd, const void *buffer, unsigned size) {
+	struct file *f;
+	file_lock_acquire();
+
+	f = process_get_file(fd);
+	if (f == NULL)
+	{
+		file_lock_release();
+		return 0;
+	}
+
+	size = file_write(f, buffer, size);
+	file_lock_release();
+        return size;
+    }
+
+/* NEW CHANGE */
+    void
+    seek(int fd, unsigned position) {
+	struct file *f;
+	f = process_get_file(fd);
+	//f = search_files(f, fd);
+	if (f == NULL)
+	{	
+		printf("Seek failed. Exiting");
+		exit(-1);	// Should exit
+	}
+	//f->pos = position;	
+	file_seek(f, position);		// Set file position to new position from file.c
+        return;
+    }
+
+/* NEW CHANGE */
+    unsigned
+    tell(int fd) {
+	struct file *f;
+	f= process_get_file(fd);
+	if (f == NULL)
+	{
+		printf("Tell failed. Exiting");
+		exit(-1);	// Should exit
+	}
+        return file_tell(f);	// Return file position from file.c
+    }
 
     void
     close(int fid) {
