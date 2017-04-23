@@ -315,9 +315,16 @@ syscall_handler(struct intr_frame *f) {
     write(int fd, const void *buffer, unsigned size) {
 	struct file *f;
 	file_lock_acquire();
+	
+	if (fd == 1)
+	{
+		putbuf(buffer, size);		// Buffer writen using putbuf
+		file_lock_release();
+		return size;
+	}
 
 	f = process_get_file(fd);
-	if (f == NULL)
+	if (f == NULL)			// If nothing written to file, return 0
 	{
 		file_lock_release();
 		return 0;
