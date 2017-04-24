@@ -21,7 +21,7 @@ Sara Kim <sara.kim@ucdenver.edu>
 
 ## Tests Passed
 
-X of 80 tests passed.
+79 of 80 tests passed.
 
 ### ARGUMENT PASSING
 
@@ -36,16 +36,16 @@ typedef struct user_program         /*Used to hold the file_name, argument count
 
 #### ALGORITHMS
 
-A2: Briefly describe how you implemented argument parsing.  How do you arrange for the elements of argv[] to be in the right order? How 
-do you avoid overflowing the stack page?
+A2: Briefly describe how you implemented argument parsing.  How do you arrange for the elements of argv[] to be in the right order? 
+How do you avoid overflowing the stack page?
 
 <pre>
 In process_exectute(), a copy of the command line string is made so that calling strtok_r does not corrupt the original command line 
 string. It is then tokenised to extract the file_name inorder to call thread_create, which will lead to start_process(). Within the  
 start_process function the entire command line is parsed and it's arguments, the argument count, and the file name are saved in the 
 user_program struct. The arguments are extracted in order and placed in consecutive spots of the args[] array. The stack is then  
-initialized with each argument in the correct order ensured by our args[] array, and all other information that the process needs to be 
-there. A simulated return from an interrupt then forces the thread to start. 
+initialized with each argument in the correct order ensured by our args[] array, and all other information that the process needs to 
+be there. A simulated return from an interrupt then forces the thread to start. 
 </pre>
 
  
@@ -113,13 +113,27 @@ gets reopened the file will get a new file descriptor each time this occurs.
 B3: Describe your code for reading and writing user data from the kernel.
 
 <pre>
+In the syscall handler, when the read function is called a file lock is acquired and the current file is found with the 
+process_get_file that searches through the open file list looking for its file descriptor. If process_get_file returns NULL meaning 
+there either was no file or the file could not be read then the lock is released and -1 is returned. If a file is found then the 
+file_read function is called with the current file passed to it followed by the file lock being released and an unsigned int size 
+being returned from the read function. 
+
+The read fuction is almost identical to the write function, but instead of calling file_read, file_write is called.
+
+Both the read and write functions are accessed through system calls and expect a file descriptor, pointer to a buffer, and a parameter 
+specifying the size of the buffer.
 </pre>
 
 B4:  Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least 
-and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about for 
-a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
+and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about 
+for a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
 
 <pre>
+The least number of possible calls to pagedir_get_page(), or inspections, is 1 and the greatest number is 4,096. The least number of 
+possible calls is the case where a segment size for ELF in memory is greater than or equal to the segment size in files. The greatest 
+number results when each ELF is only one byte in size and 1 inspection is required for each byte. For 2 bytes, the least number is 1 
+and the greatest number is 2 following the same argument as mentioned above.
 </pre>
 
 B5: Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
@@ -134,12 +148,24 @@ is returned.
 
 B6: Any access to user program memory at a user-specified address can fail due to a bad pointer value.  Such accesses must cause the 
 process to be terminated.  System calls are fraught with such accesses, e.g. a "write" system call requires reading the system call 
-number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can fail 
-at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary function of code in a morass 
-of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, buffers, 
-etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for managing these issues.  Give an example.
+number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can 
+fail at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary function of code in a 
+morass of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, 
+buffers, etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for managing these issues.  Give an 
+example.
 
 <pre>
+Before any system calls are actually 'called' the arguments are extracted from the stack and checked that they are valid. This 
+checking is done by the user_memory_ok function. After this preliminary check the system call handler continues or exit(-1) is called 
+if not. If the arguments are invalid then no locks or buffers are allocated. When a page fault occurs, the process exits and all files 
+are closed. Since all of the checking is done prior to the functions being called this avoids the primary function of our code from 
+being obscured. 
+
+For an example, a write system call will first get the arguments checked and extracted through the syscall_handler. The user_syscall 
+struct is populated with an array of the arguments, a syscall_index, and an argument count. We then identify that the syscall is a 
+write system call and call the write function where the file descriptor, buffer, and buffer size are passed to the write function. At 
+this point all arguments have been previously validated and therefore no more validation is needed and we are free to execute the 
+write function if there is something to be written to the file.
 </pre>
 
 #### SYNCHRONIZATION
@@ -148,6 +174,13 @@ B7: The "exec" system call returns -1 if loading the new executable fails, so it
 loading.  How does your code ensure this?  How is the load success/failure status passed back to the thread that calls "exec"?
 
 <pre>
+Every thread struct has a semaphore called child_sema that when process_execute finishes and returns a new process's ID to a call to 
+exec the parent thread finds the newly created process in the list of its children based on its thread identifier. Then it downs the 
+new process's semaphore which ensures proper synchronization with the code responsible for loading a process.
+
+If a process loads correctly, or if it fails when trying to load, its semaphore is 'upped' so the parent process knows that loading 
+finished. Before the semaphore is upped a boolean flag is set to indicate success or failure of loading which is used to let the 
+parent know the result of the loading.
 </pre>
 
 B8: Consider parent process P with child process C.  How do you ensure proper synchronization and avoid race conditions when P calls 
@@ -155,6 +188,8 @@ wait(C) before C exits?  After C exits?  How do you ensure that all resources ar
 without waiting, before C exits?  After C exits?  Are there any special cases?
 
 <pre>
+Proper synchronization is ensured by using a semaphore with every thread called child_sema. When P calls wait(C) before C has exited, 
+the child_sema is downed and initialized to 0. When C finally exits, then the semaphore is upped.
 </pre>
 
 #### RATIONALE
@@ -162,16 +197,22 @@ without waiting, before C exits?  After C exits?  Are there any special cases?
 B9: Why did you choose to implement access to user memory from the kernel in the way that you did?
 
 <pre>
+User memory is checked before access, which made the most sense to us that it be checked from the very beginning.
 </pre>
 
 B10: What advantages or disadvantages can you see to your design for file descriptors?
 
 <pre>
+Advantages would be that the same structure can always be used to store the necessary file information and since each thread has its 
+own list of files there is no limit (besides memory) on the number of open files/descriptors. The disadvantages are that there can 
+exist many duplicate structs for stdin and stdout and that accessing a file descriptor requires iterating through the list, which is 
+done in linear (O(n)) time.
 </pre>
 
 B11: The default tid_t to pid_t mapping is the identity mapping. If you changed it, what advantages are there to your approach? 
 
 <pre>
+Not applicable.
 </pre>
 
 ### SURVEY QUESTIONS
