@@ -1,5 +1,4 @@
-
-            +-----------------------+
+    +-----------------------+
 
             |   Operating Systems   |
 
@@ -30,25 +29,27 @@ X of 80 tests passed.
 
 A1: Copy here the declaration of each new or changed 'struct' or 'struct' member, global or static variable, 'typedef', or enumeration. Identify the purpose of each in 25 words or less.
 
-> * 
+> * typedef struct user_program
+> Used to hold the file_name, argument count (argc), and extracted command line arguments (argv).
 
-> * 
 
 #### ALGORITHMS
 
 A2: Briefly describe how you implemented argument parsing.  How do you arrange for the elements of argv[] to be in the right order? How do you avoid overflowing the stack page?
 
->
+> In process_exectute(), a copy of the command line string is made so that calling strtok_r does not corrupt the original commnad line string. It is then tokenised to extract the file_name inorder to call thread_create, which will lead to start_process(). Within the start_process function the entire command line is parsed and it's arguments, the argument count, and the file name are saved in the user_program struct. The arguments are extracted in order and placed in consecutive spots of the args[] array. The stack is then initialized with each argument in the correct order ensured by our args[] array, and all other information that the process needs to be there. A simulated return from an interrupt then forces the thread to start. 
+
+
  
 #### RATIONALE
 
 A3: Why does Pintos implement strtok_r() but not strtok()?
 
->
+> In Pintos strtok_r is implemented instead of strtok because it is more threadsafe. Strtok_r is reentrant, to avoid the case where another thread gains control and also calls strtok, which would change the savepointer. When the original thread regains control, it would pick up where the other thread's strtok left off. With strtok_r, we provide the saveptr, so we the problem is avoided.
 
 A4: In Pintos, the kernel separates commands into a executable name and arguments.  In Unix-like systems, the shell does this separation.  Identify at least two advantages of the Unix approach.
 
->
+The Unix approaces shortens the time inside kernel and offers more robust checking by checking whether the executable is there before passing it to kernel. 
 
 ### SYSTEM CALLS
 
@@ -58,12 +59,25 @@ A4: In Pintos, the kernel separates commands into a executable name and argument
 
 B1: Copy here the declaration of each new or changed struct or struct member, global or static variable, typedef, or enumeration. Identify the purpose of each in 25 words or less.
 
-> * 
-> *
+> * struct child_parent
+> Child process struct
+
+> * struct user_syscall
+> Holds parsed arguments and syscall_index extracted when syscall handler is reached
+
+> * struct process_file
+> For process files
+
+> * struct lock file_lock
+> Global file lock 
+
+>* In the thread struct
+>
+
 
 B2: Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
 
-> 
+>  The file descriptors are unique to each individual file that is opened by calling the open system call. These files get added to the current process's list of open files and assigned this unique file descriptor. The uniqueness, occurs within a single process only and when a file gets closed its file descriptor is freed and can be reused by the system later for another file. If the file is open and gets reopened the file will get a new file descriptor each time this occurs.
 
 #### ALGORITHMS
 
@@ -73,11 +87,11 @@ B3: Describe your code for reading and writing user data from the kernel.
 
 B4:  Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about for a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
 
->
+> 
 
 B5: Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
 
->
+> When process wait is called, it loops through the list of the process' children list to check if any of the structs have a matching tid. If no match is found then -1 is returned. If a matching tid is found, the child_parent struct contains a boolean variable has_exited which is indicate whether or not the child has finished processes. If the child is still alive, we will wait for it to die, using a lock and condition through cond_wait. When the process is done it is removed from the list and the exit_status of the process is returned.
 
 B6: Any access to user program memory at a user-specified address can fail due to a bad pointer value.  Such accesses must cause the process to be terminated.  System calls are fraught with such accesses, e.g. a "write" system call requires reading the system call number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can fail at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary function of code in a morass of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, buffers, etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for managing these issues.  Give an example.
 
